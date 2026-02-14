@@ -1,0 +1,580 @@
+-- [[ RIO PRIVATE ENGINE - SWORD REACH BUILD ]] 
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local HttpService = game:GetService("HttpService")
+local UserInputService = game:GetService("UserInputService")
+local VirtualUser = game:GetService("VirtualUser")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+-- [[ 1. CONFIGURATION & STATE ]]
+local ChangelogContent = {
+    "v2.4: Circle Shows Always (Not Just With Sword)",
+    "v2.3: Added Rainbow LED Animation Option",
+    "v2.2: Non-Filled Circle + Custom Colors",
+    "v2.1: Added 3D Reach Circle at Feet",
+    "v2.0: Sword-Based Reach (NO FLING GUARANTEED!)",
+    "v1.8: Bug Fixes & Polishes",
+    "v1.7: Full Codebase Expansion (Restored Rig Checks)",
+    "v1.6: Heartbeat Hitbox Integration (No Fling!)",
+    "v1.5: Fixed player tab",
+    "v1.4: Added Changelog Tab",
+    "v1.3: Updated Hitbox Logic (Flingable Cautious)",
+    "v1.2: Added Auto Clicker (Left/Right)",
+    "v1.1: Public Realease",
+    "v1.0: Initial Release"
+}
+
+getgenv().WhitelistedPlayers = {}
+getgenv().SelectedTarget = nil 
+local LockedTarget = nil
+
+-- Auto Clicker State
+local AutoClicker = {
+    Enabled = false,
+    Button = "Left",
+    Interval = 0.01
+}
+
+-- Aim Assist State
+local AimAssistEnabled = false
+local StickyAim = false
+local AimPart = "HumanoidRootPart"
+local AimSmoothness = 0.15
+local FOVRadius = 100
+local ShowFOV = true
+local AimMethod = "Camera" 
+
+-- Prediction State
+local PredictionEnabled = false
+local PredictionX = 0.165
+local PredictionY = 0.165
+
+-- Defense & Reach State
+local ReachEnabled = true
+local ReachSize = 8 
+local ShowReachIndicator = true
+local ReachColorNormal = Color3.fromRGB(255, 255, 255) -- White
+local ReachColorActive = Color3.fromRGB(0, 255, 0) -- Green
+local RainbowNormal = false
+local RainbowActive = false
+local RainbowOffset = 0
+local TankActive = false
+local DesyncActive = false
+
+-- [[ 2. WEBHOOK INITIALIZATION ]]
+local WebhookURL = "https://discord.com/api/webhooks/1467231677351989563/aSBnMUeot4PzaIO8iUgGIHU2HyK05ezxu-vA5F7V-k_-nnyDqrIg7eh2Zcah0T3XgrJt" 
+pcall(function()
+    local req = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
+    if req then
+        req({
+            Url = WebhookURL,
+            Method = "POST",
+            Headers = {["Content-Type"] = "application/json"},
+            Body = HttpService:JSONEncode({
+                ["content"] = "**" .. LocalPlayer.Name .. "** has initialized v2.4 (Always Show Circle)"
+            })
+        })
+    end
+end)
+
+-- [[ 3. DRAWING API (FOV VISUALS) ]]
+local FOVCircle = Drawing.new("Circle")
+FOVCircle.Thickness = 2
+FOVCircle.Color = Color3.fromRGB(255, 255, 255)
+FOVCircle.Filled = false
+FOVCircle.Transparency = 1
+FOVCircle.Visible = false
+
+-- HSV to RGB conversion for rainbow
+local function HSVtoRGB(h, s, v)
+    local r, g, b
+    local i = math.floor(h * 6)
+    local f = h * 6 - i
+    local p = v * (1 - s)
+    local q = v * (1 - f * s)
+    local t = v * (1 - (1 - f) * s)
+    i = i % 6
+    if i == 0 then r, g, b = v, t, p
+    elseif i == 1 then r, g, b = q, v, p
+    elseif i == 2 then r, g, b = p, v, t
+    elseif i == 3 then r, g, b = p, q, v
+    elseif i == 4 then r, g, b = t, p, v
+    elseif i == 5 then r, g, b = v, p, q
+    end
+    return Color3.fromRGB(r * 255, g * 255, b * 255)
+end
+
+-- 3D Reach Circle at player's feet (non-filled outline)
+local ReachCircleParts = {}
+
+local function createReachCircle()
+    -- Clear old parts
+    for _, part in pairs(ReachCircleParts) do
+        if part then part:Destroy() end
+    end
+    ReachCircleParts = {}
+    
+    -- Create circle outline using multiple parts
+    local numParts = 60 -- More parts = smoother circle
+    local angleStep = (math.pi * 2) / numParts
+    
+    for i = 1, numParts do
+        local angle = angleStep * i
+        local part = Instance.new("Part")
+        part.Name = "ReachIndicatorSegment"
+        part.Size = Vector3.new(0.3, 0.3, 0.5) -- Small segment
+        part.Material = Enum.Material.Neon
+        part.Color = ReachColorNormal
+        part.Transparency = 0.3
+        part.CanCollide = false
+        part.Anchored = true
+        part.Parent = workspace
+        
+        table.insert(ReachCircleParts, part)
+    end
+end
+
+local function updateReachCirclePosition(rootPosition)
+    if #ReachCircleParts == 0 then return end
+    
+    local numParts = #ReachCircleParts
+    local angleStep = (math.pi * 2) / numParts
+    
+    for i, part in ipairs(ReachCircleParts) do
+        if part and part.Parent then
+            local angle = angleStep * i
+            local x = math.cos(angle) * ReachSize
+            local z = math.sin(angle) * ReachSize
+            local segmentPos = rootPosition + Vector3.new(x, -3, z)
+            
+            -- Point towards center
+            part.CFrame = CFrame.new(segmentPos, rootPosition + Vector3.new(0, -3, 0))
+        end
+    end
+end
+
+local function setReachCircleColor(color, isRainbow)
+    if isRainbow then
+        -- Rainbow animation - each segment gets different color
+        local numParts = #ReachCircleParts
+        for i, part in ipairs(ReachCircleParts) do
+            if part and part.Parent then
+                -- Calculate hue based on position + time offset for movement
+                local hue = ((i / numParts) + RainbowOffset) % 1
+                part.Color = HSVtoRGB(hue, 1, 1)
+            end
+        end
+    else
+        -- Solid color
+        for _, part in ipairs(ReachCircleParts) do
+            if part and part.Parent then
+                part.Color = color
+            end
+        end
+    end
+end
+
+local function destroyReachCircle()
+    for _, part in pairs(ReachCircleParts) do
+        if part then part:Destroy() end
+    end
+    ReachCircleParts = {}
+end
+
+-- [[ 4. UI INITIALIZATION ]]
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+local Window = Rayfield:CreateWindow({
+    Name = "Rio Combined Build",
+    LoadingTitle = "Rio Private Engine",
+    LoadingSubtitle = "by Rio",
+    ConfigurationSaving = { Enabled = false },
+    KeySystem = false,
+})
+
+local MainTab = Window:CreateTab("Main", "sword")
+local PlayerTab = Window:CreateTab("Players", "users")
+local AimTab = Window:CreateTab("Aim Assist", "crosshair")
+local ClickerTab = Window:CreateTab("Auto Clicker", "mouse-pointer")
+local GameTab = Window:CreateTab("Game", "gamepad-2")
+local ChangelogTab = Window:CreateTab("Changelog", "file-text")
+
+-- [[ 5. ENGINE CORE LOGIC ]]
+
+-- Dedicated Auto Clicker Thread
+task.spawn(function()
+    while true do
+        if AutoClicker.Enabled then
+            if AutoClicker.Button == "Left" then
+                mouse1click()
+            elseif AutoClicker.Button == "Right" then
+                mouse2click()
+            end
+            task.wait(AutoClicker.Interval)
+        else
+            task.wait()
+        end
+    end
+end)
+
+-- Helper: Validation Logic
+local function IsValid(plr)
+    if plr and plr.Character and plr.Character:FindFirstChild(AimPart) and plr.Character:FindFirstChild("Humanoid") then
+        local isAlive = plr.Character.Humanoid.Health > 0
+        local isNotWhitelisted = not getgenv().WhitelistedPlayers[plr.Name]
+        return isAlive and isNotWhitelisted
+    end
+    return false
+end
+
+-- Helper: Local Integrity
+local function IsLocalAlive()
+    return LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") and LocalPlayer.Character.Humanoid.Health > 0
+end
+
+-- Main RenderLoop: FOV and Aim Assist
+RunService.RenderStepped:Connect(function()
+    local Center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+    local originPos = (AimMethod == "Mouse") and UserInputService:GetMouseLocation() or Center
+    
+    -- FOV Rendering
+    if ShowFOV and AimAssistEnabled and IsLocalAlive() then
+        FOVCircle.Position = originPos
+        FOVCircle.Radius = FOVRadius
+        FOVCircle.Visible = true
+    else
+        FOVCircle.Visible = false
+    end
+    
+    -- 3D Reach Indicator Rendering (Circle at feet)
+    if ShowReachIndicator and ReachEnabled and IsLocalAlive() then
+        local character = LocalPlayer.Character
+        local humanoidRootPart = character and character:FindFirstChild("HumanoidRootPart")
+        
+        if humanoidRootPart then
+            -- Create circle if it doesn't exist
+            if #ReachCircleParts == 0 then
+                createReachCircle()
+            end
+            
+            -- Update circle position
+            if #ReachCircleParts > 0 then
+                updateReachCirclePosition(humanoidRootPart.Position)
+            end
+            
+            -- Check if any enemy is in range (only check when sword equipped for accurate detection)
+            local sword = character:FindFirstChildOfClass("Tool")
+            local enemyInRange = false
+            
+            if sword and sword:FindFirstChild("Handle") then
+                for _, targetPlayer in pairs(Players:GetPlayers()) do
+                    if targetPlayer ~= LocalPlayer and not getgenv().WhitelistedPlayers[targetPlayer.Name] then
+                        if targetPlayer.Character then
+                            local targetHRP = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+                            if targetHRP then
+                                local distance = (humanoidRootPart.Position - targetHRP.Position).Magnitude
+                                if distance <= ReachSize then
+                                    enemyInRange = true
+                                    break
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            
+            -- Update rainbow offset for animation
+            RainbowOffset = RainbowOffset + 0.01
+            if RainbowOffset > 1 then RainbowOffset = 0 end
+            
+            -- Change color based on enemy presence
+            if enemyInRange then
+                setReachCircleColor(ReachColorActive, RainbowActive)
+            else
+                setReachCircleColor(ReachColorNormal, RainbowNormal)
+            end
+        else
+            -- Hide circle when character doesn't exist
+            destroyReachCircle()
+        end
+    else
+        -- Hide circle when indicator disabled
+        destroyReachCircle()
+    end
+
+    -- Aim Assist Execution
+    if AimAssistEnabled and IsLocalAlive() then
+        local target = nil
+
+        -- Sticky Logic Priority
+        if StickyAim and LockedTarget and IsValid(LockedTarget) then
+            local pos, onScreen = Camera:WorldToViewportPoint(LockedTarget.Character[AimPart].Position)
+            local dist = (Vector2.new(pos.X, pos.Y) - originPos).Magnitude
+            if onScreen and dist <= FOVRadius then
+                target = LockedTarget
+            end
+        end
+
+        -- Search for nearest target in FOV
+        if not target then
+            local lastDist = FOVRadius
+            for _, player in pairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer and IsValid(player) then
+                    local pos, onScreen = Camera:WorldToViewportPoint(player.Character[AimPart].Position)
+                    if onScreen then
+                        local dist = (Vector2.new(pos.X, pos.Y) - originPos).Magnitude
+                        if dist < lastDist then
+                            lastDist = dist
+                            target = player
+                            if StickyAim then LockedTarget = player end
+                        end
+                    end
+                end
+            end
+        end
+
+        -- Execute Aim
+        if target then
+            local targetPart = target.Character[AimPart]
+            local finalTargetPos = targetPart.Position
+            
+            if PredictionEnabled then
+                local vel = targetPart.Velocity
+                finalTargetPos = finalTargetPos + Vector3.new(vel.X * PredictionX, vel.Y * PredictionY, vel.Z * PredictionX)
+            end
+
+            if AimMethod == "Camera" then
+                Camera.CFrame = Camera.CFrame:Lerp(CFrame.new(Camera.CFrame.Position, finalTargetPos), AimSmoothness)
+            elseif AimMethod == "Mouse" then
+                local screenPos = Camera:WorldToViewportPoint(finalTargetPos)
+                local mPos = UserInputService:GetMouseLocation()
+                mousemoverel((screenPos.X - mPos.X) * AimSmoothness, (screenPos.Y - mPos.Y) * AimSmoothness)
+            end
+        end
+    else
+        LockedTarget = nil
+    end
+end)
+
+-- [[ 6. SWORD-BASED REACH MECHANIC (NO FLING!) ]]
+
+-- Stepped Loop: Sword-Based Reach System
+RunService.Stepped:Connect(function()
+    if not ReachEnabled then return end
+    
+    pcall(function()
+        if not IsLocalAlive() then return end
+        
+        local character = LocalPlayer.Character
+        local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+        if not humanoidRootPart then return end
+        
+        -- Check if player is holding a sword/tool
+        local sword = character:FindFirstChildOfClass("Tool")
+        if sword and sword:FindFirstChild("Handle") then
+            -- Loop through all players
+            for _, targetPlayer in pairs(Players:GetPlayers()) do
+                if targetPlayer ~= LocalPlayer and not getgenv().WhitelistedPlayers[targetPlayer.Name] then
+                    if targetPlayer.Character and targetPlayer.Character:FindFirstChild("Left Arm") and targetPlayer.Character:FindFirstChild("Right Leg") then
+                        local targetCharacter = targetPlayer.Character
+                        local targetHRP = targetCharacter:FindFirstChild("HumanoidRootPart")
+                        
+                        if targetHRP then
+                            -- Calculate distance
+                            local distance = (humanoidRootPart.Position - targetHRP.Position).Magnitude
+                            
+                            -- If within reach distance
+                            if distance <= ReachSize then
+                                local rightLeg = targetCharacter:FindFirstChild("Right Leg")
+                                if rightLeg then
+                                    pcall(function()
+                                        -- Break joints and teleport leg to your position
+                                        rightLeg:BreakJoints()
+                                        rightLeg.Transparency = 1  -- Always invisible
+                                        rightLeg.CanCollide = false
+                                        rightLeg.CFrame = humanoidRootPart.CFrame * CFrame.new(1, 0, -3.5)
+                                    end)
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+    
+    -- Defense Logic (Ultra Tank & Desync)
+    if IsLocalAlive() then
+        if TankActive then
+            LocalPlayer.Character.Humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+            LocalPlayer.Character.Humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+        end
+        if DesyncActive then
+            local root = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if root then
+                local oldV = root.Velocity
+                root.Velocity = Vector3.new(0, -200, 0)
+                RunService.RenderStepped:Wait()
+                root.Velocity = oldV
+            end
+        end
+    end
+end)
+
+-- [[ 7. UI TABS & MODULES ]]
+
+-- MAIN TAB
+MainTab:CreateSection("Reach Engine")
+MainTab:CreateLabel("⚔️ Sword-Based Reach (Must Hold Sword!)")
+MainTab:CreateLabel("🔵 Circle shows reach range at your feet")
+MainTab:CreateToggle({Name = "Enable Reach", CurrentValue = true, Callback = function(v) 
+    ReachEnabled = v 
+end})
+MainTab:CreateSlider({Name = "Reach Size", Range = {2, 20}, Increment = 0.5, CurrentValue = 8, Callback = function(v) 
+    ReachSize = v 
+    -- Recreate circle with new size
+    if ShowReachIndicator and ReachEnabled then
+        destroyReachCircle()
+    end
+end})
+MainTab:CreateToggle({Name = "Show Reach Indicator", CurrentValue = true, Callback = function(v) 
+    ShowReachIndicator = v 
+    if not v then
+        destroyReachCircle()
+    end
+end})
+MainTab:CreateSection("Circle Colors")
+MainTab:CreateDropdown({
+    Name = "Normal Color",
+    Options = {"White", "Red", "Blue", "Yellow", "Purple", "Cyan", "Orange", "Rainbow"},
+    CurrentValue = "White",
+    Callback = function(v)
+        local colorName = (type(v) == "table") and v[1] or v
+        if colorName == "Rainbow" then
+            RainbowNormal = true
+        else
+            RainbowNormal = false
+            if colorName == "White" then ReachColorNormal = Color3.fromRGB(255, 255, 255)
+            elseif colorName == "Red" then ReachColorNormal = Color3.fromRGB(255, 0, 0)
+            elseif colorName == "Blue" then ReachColorNormal = Color3.fromRGB(0, 100, 255)
+            elseif colorName == "Yellow" then ReachColorNormal = Color3.fromRGB(255, 255, 0)
+            elseif colorName == "Purple" then ReachColorNormal = Color3.fromRGB(200, 0, 255)
+            elseif colorName == "Cyan" then ReachColorNormal = Color3.fromRGB(0, 255, 255)
+            elseif colorName == "Orange" then ReachColorNormal = Color3.fromRGB(255, 150, 0)
+            end
+        end
+    end
+})
+MainTab:CreateDropdown({
+    Name = "Enemy In Range Color",
+    Options = {"Green", "Red", "Blue", "Yellow", "Purple", "Cyan", "Orange", "White", "Rainbow"},
+    CurrentValue = "Green",
+    Callback = function(v)
+        local colorName = (type(v) == "table") and v[1] or v
+        if colorName == "Rainbow" then
+            RainbowActive = true
+        else
+            RainbowActive = false
+            if colorName == "Green" then ReachColorActive = Color3.fromRGB(0, 255, 0)
+            elseif colorName == "Red" then ReachColorActive = Color3.fromRGB(255, 0, 0)
+            elseif colorName == "Blue" then ReachColorActive = Color3.fromRGB(0, 100, 255)
+            elseif colorName == "Yellow" then ReachColorActive = Color3.fromRGB(255, 255, 0)
+            elseif colorName == "Purple" then ReachColorActive = Color3.fromRGB(200, 0, 255)
+            elseif colorName == "Cyan" then ReachColorActive = Color3.fromRGB(0, 255, 255)
+            elseif colorName == "Orange" then ReachColorActive = Color3.fromRGB(255, 150, 0)
+            elseif colorName == "White" then ReachColorActive = Color3.fromRGB(255, 255, 255)
+            end
+        end
+    end
+})
+MainTab:CreateSection("Defense Settings")
+MainTab:CreateToggle({Name = "Ultra Tank", CurrentValue = false, Callback = function(v) TankActive = v end})
+MainTab:CreateToggle({Name = "Desync", CurrentValue = false, Callback = function(v) DesyncActive = v end})
+
+-- PLAYERS TAB
+PlayerTab:CreateSection("Target Profile")
+local TargetLabel = PlayerTab:CreateLabel("Selected: [None]")
+local TargetIdLabel = PlayerTab:CreateLabel("Account ID: 0")
+local TargetAgeLabel = PlayerTab:CreateLabel("Account Age: 0 days")
+
+local function GetNames()
+    local n = {}
+    for _, p in pairs(Players:GetPlayers()) do if p ~= LocalPlayer then table.insert(n, p.Name) end end
+    return n
+end
+
+local PlayerDropdown = PlayerTab:CreateDropdown({
+    Name = "Select Player",
+    Options = GetNames(),
+    Callback = function(v)
+        local name = (type(v) == "table") and v[1] or v
+        getgenv().SelectedTarget = name
+        local targetPlr = Players:FindFirstChild(name)
+        if targetPlr then
+            TargetLabel:Set("Selected: " .. name)
+            TargetIdLabel:Set("Account ID: " .. targetPlr.UserId)
+            TargetAgeLabel:Set("Account Age: " .. targetPlr.AccountAge .. " days")
+        end
+    end
+})
+
+PlayerTab:CreateButton({Name = "Refresh List", Callback = function() PlayerDropdown:Refresh(GetNames(), true) end})
+PlayerTab:CreateButton({Name = "Whitelist Selected", Callback = function() 
+    if getgenv().SelectedTarget then 
+        getgenv().WhitelistedPlayers[getgenv().SelectedTarget] = true 
+        Rayfield:Notify({Title = "Whitelisted", Content = getgenv().SelectedTarget .. " is now safe.", Duration = 2})
+    end 
+end})
+PlayerTab:CreateButton({Name = "Unwhitelist Selected", Callback = function() 
+    if getgenv().SelectedTarget then 
+        getgenv().WhitelistedPlayers[getgenv().SelectedTarget] = nil 
+    end 
+end})
+PlayerTab:CreateSection("Actions")
+PlayerTab:CreateButton({Name = "Teleport Behind", Callback = function()
+    local t = Players:FindFirstChild(getgenv().SelectedTarget or "")
+    if t and t.Character then 
+        LocalPlayer.Character.HumanoidRootPart.CFrame = t.Character.HumanoidRootPart.CFrame * CFrame.new(0,0,3) 
+    end
+end})
+PlayerTab:CreateButton({Name = "Spectate", Callback = function()
+    local t = Players:FindFirstChild(getgenv().SelectedTarget or "")
+    if t and t.Character then Camera.CameraSubject = t.Character.Humanoid end
+end})
+PlayerTab:CreateButton({Name = "Stop Spectating", Callback = function() Camera.CameraSubject = LocalPlayer.Character.Humanoid end})
+
+-- AIM ASSIST TAB
+AimTab:CreateSection("Aim Engine")
+AimTab:CreateToggle({Name = "Enable Aim Assist", CurrentValue = false, Callback = function(v) AimAssistEnabled = v end})
+AimTab:CreateToggle({Name = "Sticky Aim", CurrentValue = false, Callback = function(v) StickyAim = v end})
+AimTab:CreateKeybind({Name = "Toggle Key", CurrentKeybind = "Q", Callback = function() AimAssistEnabled = not AimAssistEnabled end})
+AimTab:CreateDropdown({Name = "Aim Method", Options = {"Camera", "Mouse"}, CurrentValue = "Camera", Callback = function(v) AimMethod = (type(v) == "table") and v[1] or v end})
+AimTab:CreateDropdown({Name = "Aim Part", Options = {"Head", "Torso", "HumanoidRootPart"}, CurrentValue = "HumanoidRootPart", Callback = function(v) AimPart = (type(v) == "table") and v[1] or v end})
+AimTab:CreateSection("Prediction Settings")
+AimTab:CreateToggle({Name = "Enable Prediction", CurrentValue = false, Callback = function(v) PredictionEnabled = v end})
+AimTab:CreateSlider({Name = "Prediction X", Range = {0, 1}, Increment = 0.001, CurrentValue = 0.165, Callback = function(v) PredictionX = v end})
+AimTab:CreateSlider({Name = "Prediction Y", Range = {0, 1}, Increment = 0.001, CurrentValue = 0.165, Callback = function(v) PredictionY = v end})
+AimTab:CreateSection("Visuals & Feel")
+AimTab:CreateToggle({Name = "Show FOV", CurrentValue = true, Callback = function(v) ShowFOV = v end})
+AimTab:CreateSlider({Name = "FOV Radius", Range = {30, 800}, Increment = 5, CurrentValue = 100, Callback = function(v) FOVRadius = v end})
+AimTab:CreateSlider({Name = "Smoothness", Range = {0.01, 1}, Increment = 0.01, CurrentValue = 0.15, Callback = function(v) AimSmoothness = v end})
+
+-- AUTO CLICKER TAB
+ClickerTab:CreateSection("Configuration")
+ClickerTab:CreateToggle({Name = "Enable Clicker", CurrentValue = false, Callback = function(v) AutoClicker.Enabled = v end})
+ClickerTab:CreateKeybind({Name = "Toggle Bind", CurrentKeybind = "C", Callback = function() AutoClicker.Enabled = not AutoClicker.Enabled end})
+ClickerTab:CreateDropdown({Name = "Mouse Button", Options = {"Left", "Right"}, CurrentValue = "Left", Callback = function(v) AutoClicker.Button = (type(v) == "table") and v[1] or v end})
+ClickerTab:CreateSlider({Name = "Interval (Seconds)", Range = {0.01, 1}, Increment = 0.01, CurrentValue = 0.1, Callback = function(v) AutoClicker.Interval = v end})
+
+-- GAME TAB (CHAT LOGGER)
+GameTab:CreateSection("Server Chat Log")
+local function LogMessage(msg, author) GameTab:CreateLabel("[" .. author .. "]: " .. msg) end
+for _, player in pairs(Players:GetPlayers()) do player.Chatted:Connect(function(msg) LogMessage(msg, player.Name) end) end
+Players.PlayerAdded:Connect(function(player) player.Chatted:Connect(function(msg) LogMessage(msg, player.Name) end) end)
+
+-- CHANGELOG TAB
+ChangelogTab:CreateSection("Changelog, Current version = v2.4")
+for _, change in ipairs(ChangelogContent) do ChangelogTab:CreateLabel(change) end
+
+Rayfield:LoadConfiguration()
