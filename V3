@@ -8,9 +8,138 @@ local VirtualUser = game:GetService("VirtualUser")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
+-- [[ KEY SYSTEM DATABASE ]]
+-- Add keys here: ["KEY"] = UserID
+local AuthorizedKeys = {
+    ["AVELUNE-kd9s8fh2jk4ls9d8fh2k3jsd9f8h2k3l"] = 2371537833,  -- w1ssac
+    ["AVELUNE-9f8h2k3lsd9f8h2k3jsd9f8h2k3lsd9f"] = 8008710293,  -- alsoIssac
+    ["AVELUNE-3jsd9f8h2k3lsd9f8h2k3jsd9f8h2k3l"] = 0,  -- Replace 0 with UserID
+    ["AVELUNE-7g4kd9s8fh2jk4ls9d8fh2k3jsd9f8h2"] = 0,  -- Replace 0 with UserID
+    ["AVELUNE-2k3lsd9f8h2k3jsd9f8h2k3lsd9f8h2k"] = 0,  -- Replace 0 with UserID
+    ["AVELUNE-5a8d3f7g9h2j4k6l8s9d0f1h3j5k7l9s"] = 0,  -- Replace 0 with UserID
+    ["AVELUNE-4h6j8k0l2s4d6f8h0j2k4l6s8d0f2h4j"] = 0,  -- Replace 0 with UserID
+    ["AVELUNE-1s3d5f7h9j1k3l5s7d9f1h3j5k7l9s1d"] = 0,  -- Replace 0 with UserID
+    ["AVELUNE-8k0s2d4f6h8j0l2s4d6f8h0j2k4l6s8d"] = 0,  -- Replace 0 with UserID
+    ["AVELUNE-6f8h0j2k4l6s8d0f2h4j6k8l0s2d4f6h"] = 0,  -- Replace 0 with UserID
+}
+
+-- [[ KEY VALIDATION ]]
+local function validateKey(key)
+    if AuthorizedKeys[key] then
+        if AuthorizedKeys[key] == LocalPlayer.UserId then
+            return true, "Key valid for your account!"
+        else
+            return false, "This key is not authorized for your account."
+        end
+    else
+        return false, "Invalid key."
+    end
+end
+
+-- Key System UI
+local KeyUI = Instance.new("ScreenGui")
+KeyUI.Name = "RioKeySystem"
+KeyUI.ResetOnSpawn = false
+KeyUI.Parent = game:GetService("CoreGui")
+
+local Frame = Instance.new("Frame")
+Frame.Size = UDim2.new(0, 400, 0, 250)
+Frame.Position = UDim2.new(0.5, -200, 0.5, -125)
+Frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+Frame.BorderSizePixel = 0
+Frame.Parent = KeyUI
+
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 10)
+UICorner.Parent = Frame
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 0, 50)
+Title.BackgroundTransparency = 1
+Title.Text = "🔑 Rio Private Engine - Key System"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 18
+Title.Parent = Frame
+
+local InfoLabel = Instance.new("TextLabel")
+InfoLabel.Size = UDim2.new(1, -40, 0, 30)
+InfoLabel.Position = UDim2.new(0, 20, 0, 60)
+InfoLabel.BackgroundTransparency = 1
+InfoLabel.Text = "Enter your key to continue:"
+InfoLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+InfoLabel.Font = Enum.Font.Gotham
+InfoLabel.TextSize = 14
+InfoLabel.TextXAlignment = Enum.TextXAlignment.Left
+InfoLabel.Parent = Frame
+
+local KeyInput = Instance.new("TextBox")
+KeyInput.Size = UDim2.new(1, -40, 0, 40)
+KeyInput.Position = UDim2.new(0, 20, 0, 100)
+KeyInput.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+KeyInput.BorderSizePixel = 0
+KeyInput.Text = ""
+KeyInput.PlaceholderText = "Enter your key here..."
+KeyInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+KeyInput.Font = Enum.Font.Gotham
+KeyInput.TextSize = 14
+KeyInput.Parent = Frame
+
+local KeyInputCorner = Instance.new("UICorner")
+KeyInputCorner.CornerRadius = UDim.new(0, 6)
+KeyInputCorner.Parent = KeyInput
+
+local SubmitButton = Instance.new("TextButton")
+SubmitButton.Size = UDim2.new(1, -40, 0, 40)
+SubmitButton.Position = UDim2.new(0, 20, 0, 155)
+SubmitButton.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+SubmitButton.BorderSizePixel = 0
+SubmitButton.Text = "Submit Key"
+SubmitButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+SubmitButton.Font = Enum.Font.GothamBold
+SubmitButton.TextSize = 16
+SubmitButton.Parent = Frame
+
+local SubmitButtonCorner = Instance.new("UICorner")
+SubmitButtonCorner.CornerRadius = UDim.new(0, 6)
+SubmitButtonCorner.Parent = SubmitButton
+
+local StatusLabel = Instance.new("TextLabel")
+StatusLabel.Size = UDim2.new(1, -40, 0, 25)
+StatusLabel.Position = UDim2.new(0, 20, 0, 210)
+StatusLabel.BackgroundTransparency = 1
+StatusLabel.Text = ""
+StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+StatusLabel.Font = Enum.Font.Gotham
+StatusLabel.TextSize = 12
+StatusLabel.Parent = Frame
+
+-- Key validation function
+local scriptLoaded = false
+
+SubmitButton.MouseButton1Click:Connect(function()
+    local key = KeyInput.Text
+    local isValid, message = validateKey(key)
+    
+    if isValid then
+        StatusLabel.Text = "✓ " .. message
+        StatusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+        wait(1)
+        KeyUI:Destroy()
+        scriptLoaded = true
+    else
+        StatusLabel.Text = "✗ " .. message
+        StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+        KeyInput.Text = ""
+    end
+end)
+
+-- Wait for key validation
+repeat wait() until scriptLoaded
+
 -- [[ 1. CONFIGURATION & STATE ]]
 local ChangelogContent = {
-    "v3.4: Rename + polishes + bug fixes",
+    "v3.5: Added Key System (Account-Based Auth)",
     "v2.4: Circle Shows Always (Not Just With Sword)",
     "v2.3: Added Rainbow LED Animation Option",
     "v2.2: Non-Filled Circle + Custom Colors",
@@ -65,7 +194,7 @@ local TankActive = false
 local DesyncActive = false
 
 -- [[ 2. WEBHOOK INITIALIZATION ]]
-local WebhookURL = "https://discord.com/api/webhooks/1473065449343422556/QoXaxdo5HHMaOc75rV_0hWI-M-odwPvJG1N0gQ2In5yaCXF_aEY9XvWykDWOpJrH3Z3V" 
+local WebhookURL = "https://discord.com/api/webhooks/1467231677351989563/aSBnMUeot4PzaIO8iUgGIHU2HyK05ezxu-vA5F7V-k_-nnyDqrIg7eh2Zcah0T3XgrJt" 
 pcall(function()
     local req = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
     if req then
@@ -74,7 +203,7 @@ pcall(function()
             Method = "POST",
             Headers = {["Content-Type"] = "application/json"},
             Body = HttpService:JSONEncode({
-                ["content"] = "**" .. LocalPlayer.Name .. "** has initialized v3.4 (Always Show Circle)"
+                ["content"] = "**" .. LocalPlayer.Name .. "** has initialized v3.5 (Key System)"
             })
         })
     end
@@ -427,6 +556,8 @@ end)
 
 -- MAIN TAB
 MainTab:CreateSection("Reach Engine")
+MainTab:CreateLabel("⚔️ Sword-Based Reach (Must Hold Sword!)")
+MainTab:CreateLabel("🔵 Circle shows reach range at your feet")
 MainTab:CreateToggle({Name = "Enable Reach", CurrentValue = true, Callback = function(v) 
     ReachEnabled = v 
 end})
@@ -573,7 +704,7 @@ for _, player in pairs(Players:GetPlayers()) do player.Chatted:Connect(function(
 Players.PlayerAdded:Connect(function(player) player.Chatted:Connect(function(msg) LogMessage(msg, player.Name) end) end)
 
 -- CHANGELOG TAB
-ChangelogTab:CreateSection("Changelog, Current version = v3.4")
+ChangelogTab:CreateSection("Changelog, Current version = v3.5")
 for _, change in ipairs(ChangelogContent) do ChangelogTab:CreateLabel(change) end
 
 Rayfield:LoadConfiguration()
