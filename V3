@@ -20,7 +20,7 @@ local AuthorizedKeys = {
     ["AVELUNE-4h6j8k0l2s4d6f8h0j2k4l6s8d0f2h4j"] = 0,  -- Replace 0 with UserID
     ["AVELUNE-1s3d5f7h9j1k3l5s7d9f1h3j5k7l9s1d"] = 0,  -- Replace 0 with UserID
     ["AVELUNE-8k0s2d4f6h8j0l2s4d6f8h0j2k4l6s8d"] = 0,  -- Replace 0 with UserID
-    ["AVELUNE-6f8h0j2k4l6s8d0f2h4j6k8l0s2d4f6h"] = 0,  -- Replace 0 with UserID
+    ["AVELUNE-6f8h0j2k4l6s8d0f2h4j6k8l0s2d4f6h"] = 1454794409,  -- Replace 0 with UserID
 }
 
 -- [[ KEY VALIDATION ]]
